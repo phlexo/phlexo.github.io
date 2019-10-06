@@ -66,7 +66,6 @@
             }
             onSpawn(enemy, sprite, time) {
                 sprite.setRotation(Math.random() * Math.PI * 2);
-                console.log("onSpawn");
             }
             onUpdate(enemy, sprite, time) {
                 var lifeTime = time - enemy.spawnTime;
@@ -81,7 +80,6 @@
                 for (var i = 0; i < 4; i++) {
                     spawnDoodad(game, sprite.x, sprite.y, (Math.random() * 2 - 1) * 100, (Math.random() * 2 - 1) * 100, 'rock', 2500, 0.25, (Math.random() * 2 - 1) * 0.8);
                 }
-                console.log("onDeath");
             }
         }
 
@@ -235,7 +233,6 @@
         }
 
         function showStartScreen() {
-            console.log("showStartScreen");
             nameText.setText('Asteroid Killer');
             welcomeText.setText('Press space to start');
             gameOverText.setText("");
@@ -249,13 +246,11 @@
         }
 
         function setLives(newLives) {
-            console.log("setLives");
             lives = newLives;
             livesText.setText("Lives: " + lives);
         }
 
         function decreaseLives(lessLives) {
-            console.log("decreaseLives");
             setLives(lives - lessLives);
         }
 
@@ -328,7 +323,6 @@
         }
 
         function killAll(game) {
-            console.log("killAll");
             enemySprites.children.iterate(function (sprite) {
                 if (sprite) {
                     hurtEnemy(sprite, 1000000);
@@ -468,7 +462,6 @@
         }
 
         function hitEnemy(playerShotSprite, enemySprite) {
-            console.log("hitEnemy");
             var dmg = playerShotSprite.getData("DMG");
             hurtEnemy(enemySprite, dmg);
             playerShots.remove(playerShotSprite);
@@ -477,7 +470,6 @@
 
         var explosion = null;
         function playerIsHit(playerSprite, enemySprite) {
-            console.log("playerIsHit");
             scoreText.setText('Score: ' + score);
             playerSprite.disableBody(true, false);
             explosion = this.physics.add.sprite(playerSprite.x, playerSprite.y, 'explosion').setScale(3);
@@ -498,7 +490,6 @@
         }
 
         function gameOver(game) {
-            console.log("game over");
             gameOverText.setText('GAME OVER');
             game.time.addEvent({
                 delay: 5000,
@@ -511,7 +502,6 @@
         }
 
         function resetStuff() {
-            console.log("reset stuff");
             player.setPosition(400, 500);
             if (explosion != null) {
                 explosion.destroy();
@@ -541,7 +531,6 @@
             if (player.getData("win")) {
                 return;
             }
-            console.log("you win");
             player.setData("win", true);
             player.setVelocity(0, -300);   
             player.setCollideWorldBounds(false);
@@ -558,7 +547,6 @@
         }
 
         function restart() {
-            console.log("restart");
             runTime -= 1000;
             lastTime = runTime;
             currentEnemy = 0;
@@ -567,7 +555,6 @@
         }
 
         function resetPlayer() {
-            console.log("reset player");
             player.setData("win", false);
             player.enableBody(true, 400, 500, true, true);
             player.setCollideWorldBounds(true);
