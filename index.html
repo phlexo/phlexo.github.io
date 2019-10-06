@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script src="scripts/phaser.js"></script>
+</head>
+<body>
+    <script>
+        var config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: true
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        var runTime = 0;
+        var lastTime = 0;
+        var lives = 0;
+        var currentEnemy = 0;
+        var game = new Phaser.Game(config);
+        var player = null;
+        var score = 0;
+        var cursors = null;
+        var layer1 = null;
+        var layer2 = null;
+        var layer3 = null;
+        var layer4 = null;
+        var doodadSprites = null;
+        var enemySprites = null;
+        var enemyQueue = null;
+        var playerShots = null;
+        var cooldown = 0;
+        var power = 25;
+        var enemiesUntilPowerup = 0;
+
+        class Enemy {
+            constructor(spawnTime, spawnX, spawnY, vx, vy, vr, type, spawnHp, score) {
+                this.spawnTime = spawnTime;
+                this.spawnX = spawnX;
+                this.spawnY = spawnY;
+                this.vx = vx;
+                this.vy = vy;
+                this.vr = vr;
+                this.type = type;
+                this.spawnHp = this.currentHp = spawnHp;
+                this.score = score;
+            }
+        }
+
+        class Rock extends Enemy {
+            constructor(spawnTime, spawnX, spawnY, vx, vy, vr, waveModifier, sinModifier) {
+                super(spawnTime, spawnX, spawnY, vx, vy, vr, "rock", 100, 100);
+                this.waveModifier = waveModifier;
+                this.sinModifier = sinModifier;
+            }
+            onSpawn(enemy, sprite, time) {
+                sprite.setRotation(Math.random() * Math.PI * 2);
+                console.log("onSpawn");
+            }
+            onUpdate(enemy, sprite, time) {
+                var lifeTime = time - enemy.spawnTime;
+                sprite.body.x = enemy.spawnX + Math.sin(lifeTime * this.sinModifier) * this.waveModifier;
+                sprite.body.y = enemy.spawnY + (lifeTime * 0.1);
+                sprite.setRotation(sprite.rotation + enemy.vr);
+            }
+            onDeath(game, enemy, sprite, time) {
+                if (enemySprites.getLength() == 0) {
+                    spawnPowerup(sprite.x, sprite.y);
+                }
+                for (var i = 0; i < 4; i++) {
+                    spawnDoodad(game, sprite.x, sprite.y, (Math.random() * 2 - 1) * 100, (Math.random() * 2 - 1) * 100, 'rock', 2500, 0.25, (Math.random() * 2 - 1) * 0.8);
+                }
+                console.log("onDeath");
+            }
+        }
+
+        function spawnPowerup(x, y) {
+            var powerup = powerups.create(x, y, 'powerup');
+            powerup.setSize(28, 28, true);
+            powerup.setVelocity(0, 25);
+        }
+
+        function spawnDoodad(game, x, y, vx, vy, type, lifeTime, scale, vr) {
+            var sprite = doodadSprites.create(x, y, 'rock');
+            sprite.setVelocity(vx, vy);
+            sprite.setScale(scale);
+            sprite.setRotation(Math.random() * Math.PI * 2);
+            
+            game.add.tween({
+                targets: [sprite],
+                ease: 'Sine.easeInOut',
+                duration: lifeTime,
+                delay: 0,
+                alpha: {
+                    getStart: () => 1,
+                    getEnd: () => 0
+                },
+                onComplete: () => {
+                    doodadSprites.remove(sprite, true);
+                    sprite.destroy();
+                }
+            });
+        }
+
+        function updateDoodads(delta) {
+            doodadSprites.children.iterate(function (sprite) {
+                if (sprite) {
+                    var lifeTime = sprite.getData("lifeTime");
+                    lifeTime -= delta;
+                    sprite.setRotation(sprite.rotation + 0.1);
+                }
+            });
+        }
+
+        function updatePlayerShots(lastTime, time) {
+            playerShots.children.iterate(function (shot) {
+                if (shot && shot.y < 0) {
+                    playerShots.remove(shot, true);
+                    shot.destroy();
+                }
+            });
+        }
+
+        function updatePowerups(lastTime, time) {
+            powerups.children.iterate(function (powerup) {
+                if (powerup && powerup.y > 600) {
+                    powerups.remove(powerup, true);
+                    powerup.destroy();
+                }
+            });
+        }
+
+        var enemyQueue = [
+            // Wave 1
+            new Rock(2500, 690,    0,  0, 100, 0.01, 10, 0.005),
+            new Rock(2500, 600,  -50,  0, 100, 0.01, 10, 0.005),
+            new Rock(2500, 510, -100,  0, 100, 0.01, 10, 0.005),
+            new Rock(2500, 420, -150,  0, 100, 0.01, 10, 0.005),
+            new Rock(2500, 330, -200,  0, 100, 0.01, 10, 0.005),
+            new Rock(2500, 240, -250,  0, 100, 0.01, 10, 0.005),
+            new Rock(2500, 150, -300,  0, 100, 0.01, 10, 0.005),
+            // Wave 2
+            new Rock(13000,  50, -150, 0, 120, 0.01, 10, 0.005),
+            new Rock(13000, 140, -100, 0, 120, 0.01, 10, 0.005),
+            new Rock(13000, 230,  -50, 0, 120, 0.01, 10, 0.005),
+            new Rock(13000, 410,    0, 0, 120, 0.01, 10, 0.005),
+            new Rock(13000, 500,  -50, 0, 120, 0.01, 10, 0.005),
+            new Rock(13000, 590, -100, 0, 120, 0.01, 10, 0.005),
+            new Rock(13000, 680, -150, 0, 120, 0.01, 10, 0.005),
+            // Wave 3
+            new Rock(25000, 470+50,    0, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 480+50, -100, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 490+50, -200, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 500+50, -300, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 510+50, -400, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 520+50, -500, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 530+50, -600, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 170+50,  -50, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 180+50, -150, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 190+50, -250, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 200+50, -350, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 210+50, -450, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 220+50, -550, 0, 120, 0.01, 200, 0.001),
+            new Rock(25000, 230+50, -650, 0, 120, 0.01, 200, 0.001),
+            // Wave 4
+            new Rock(40000, 150,    0, 0, 180, 0.01, 10, 0.005),
+            new Rock(40000, 240,  -50, 0, 180, 0.01, 10, 0.005),
+            new Rock(40000, 330, -100, 0, 180, 0.01, 10, 0.005),
+            new Rock(40000, 420, -150, 0, 180, 0.01, 10, 0.005),
+            new Rock(40000, 510, -200, 0, 180, 0.01, 10, 0.005),
+            new Rock(40000, 600, -250, 0, 180, 0.01, 10, 0.005),
+            new Rock(40000, 690, -300, 0, 180, 0.01, 10, 0.005),
+            // Wave 5
+            new Rock(65000, 470+50,    0, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 480+50, -100, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 490+50, -200, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 500+50, -300, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 510+50, -400, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 520+50, -500, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 530+50, -600, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 170+50,  -50, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 180+50, -150, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 190+50, -250, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 200+50, -350, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 210+50, -450, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 220+50, -550, 0, 280, 0.01, 215, 0.002),
+            new Rock(65000, 230+50, -650, 0, 280, 0.01, 215, 0.002),
+            // Wave 6 is randomizer
+            // Wave 7
+            new Rock(90000, 470+50,    0, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 480+50, -100, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 490+50, -200, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 500+50, -300, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 510+50, -400, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 520+50, -500, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 530+50, -600, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 170+50,  -50, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 180+50, -150, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 190+50, -250, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 200+50, -350, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 210+50, -450, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 220+50, -550, 0, 280, 0.01, 215, 0.002),
+            new Rock(90000, 230+50, -650, 0, 280, 0.01, 215, 0.002),
+        ];
+
+        // Wave 6
+        var lastInStorm = 70000;
+        for (var storm = 0; storm < 100; storm++) {
+            lastInStorm += 500 + Math.random() * 1000;
+            var inWave = Math.ceil(Math.random() * 4);
+            for (var i = 0; i < 800; i += 32 + Math.random() * 400) {
+                enemyQueue.push(new Rock(lastInStorm, i, (Math.random() * 2 - 1) * 50, 0, 100 + Math.random() * 200, 0.01, 80, 0.001));
+            }
+        }
+
+        // Wave 8
+        lastInStorm = 110000;
+        for (var storm = 0; storm < 100; storm++) {
+            lastInStorm += 500 + Math.random() * 1000;
+            var inWave = Math.ceil(Math.random() * 4);
+            for (var i = 0; i < 800; i += 32 + Math.random() * 400) {
+                enemyQueue.push(new Rock(lastInStorm, i, (Math.random() * 2 - 1) * 50, 0, 100 + Math.random() * 200, 0.01, 80, 0.001));
+            }
+        }
+
+        function showStartScreen() {
+            console.log("showStartScreen");
+            nameText.setText('Asteroid Killer');
+            welcomeText.setText('Press space to start');
+            gameOverText.setText("");
+            youWinText.setText("");
+            setLives(3);
+            runTime = 0;
+            lastTime = 0;
+            player.disableBody(true, false);
+            player.setActive(false);
+            resetStuff();
+        }
+
+        function setLives(newLives) {
+            console.log("setLives");
+            lives = newLives;
+            livesText.setText("Lives: " + lives);
+        }
+
+        function decreaseLives(lessLives) {
+            console.log("decreaseLives");
+            setLives(lives - lessLives);
+        }
+
+        function updateEnemies(game, lastTime, time) {
+            while (currentEnemy < enemyQueue.length) {
+                var enemy = enemyQueue[currentEnemy];
+                if (time >= enemy.spawnTime) {
+                    if (lastTime < enemy.spawnTime) {
+                        var sprite = enemySprites.create(enemy.spawnX, enemy.spawnY, enemy.type);
+                        sprite.setCircle(28, 8, 8);
+                        sprite.setBounce(1);
+                        sprite.setCollideWorldBounds(true);
+                        sprite.setData("enemy", enemy);
+                        enemy.onSpawn(enemy, sprite, time);
+                    }
+                    currentEnemy++;
+                }
+                else  {
+                    break;
+                }
+            }
+
+            enemySprites.children.iterate(function (sprite) {
+                var enemy = sprite.getData("enemy");
+                if (enemy.currentHp > 0) {
+                    enemy.onUpdate(enemy, sprite, time);
+                }
+                else if (sprite.active) {
+                    var originalX = sprite.x;
+                    var originalY = sprite.y;
+                    var shakeRadius = 5;
+                    sprite.disableBody(true, false);
+                    game.add.tween({
+                        targets: [sprite],
+                        ease: 'Sine.easeInOut',
+                        duration: 200,
+                        delay: 0,
+                        alpha: {
+                            getStart: () => 1,
+                            getEnd: () => 0
+                        }
+                    });
+                    game.add.tween({
+                        targets: [sprite],
+                        ease: 'Linear',
+                        duration: 10,
+                        delay: 0,
+                        onLoop: () => {
+                            sprite.x = originalX + shakeRadius * (Math.random() * 2 - 1);
+                            sprite.y = originalY + shakeRadius * (Math.random() * 2 - 1);
+                        },
+                        onComplete: () => {
+                            enemySprites.remove(sprite, true);
+                            enemy.onDeath(game, enemy, sprite, time);
+                            sprite.destroy();
+                            if (player.active) {
+                                addScore(enemy.score);
+                                enemiesUntilPowerup--;
+                                if (enemiesUntilPowerup <= 0) {
+                                    enemiesUntilPowerup = 5;
+                                    spawnPowerup(sprite.x, sprite.y);
+                                }
+                            }
+                        },
+                        loop: 10,
+                        loopDelay: 10
+                    });
+                }
+            });
+        }
+
+        function killAll(game) {
+            console.log("killAll");
+            enemySprites.children.iterate(function (sprite) {
+                if (sprite) {
+                    hurtEnemy(sprite, 1000000);
+                }
+            });
+        }
+
+        function preload() {
+            this.load.image('star', 'assets/star.png');
+            this.load.spritesheet('player', 
+                'assets/gubbe.png',
+                { frameWidth: 32, frameHeight: 32 }
+            );
+            this.load.image('grass-1', 'assets/grass-1.png');
+            this.load.image('grass-2', 'assets/grass-2.png');
+            this.load.image('powerup', 'assets/apple.png');
+            this.load.image('bomb', 'assets/bomb.png');
+            this.load.image('backgroundstar', 'assets/backgroundstar.png');
+            this.load.image('planet', 'assets/planet.png');
+            this.load.spritesheet('rock', 
+                'assets/rock.png',
+                { frameWidth: 64, frameHeight: 64 }
+            );
+            this.load.spritesheet('shot', 
+                'assets/shot.png',
+                { frameWidth: 8, frameHeight: 8 }
+            );
+            this.load.spritesheet('explosion', 
+                'assets/explosion.png',
+                { frameWidth: 32, frameHeight: 32 }
+            );
+        }
+
+        function create() {
+            cursors = this.input.keyboard.createCursorKeys();
+
+            var map = this.make.tilemap({ width: 50, height: 100, tileWidth: 32, tileHeight: 32 });
+            var tiles = map.addTilesetImage('backgroundstar', null, 32, 32);
+
+            layer1 = map.createBlankDynamicLayer('layer1', tiles, 0, -600);
+            layer1.randomize(0, 0, 25, 25, [ 0, 1, 2, 3, 4, 5, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ]);
+            layer1.setScale(1);
+
+            layer2 = map.createBlankDynamicLayer('layer2', tiles, 0, -600);
+            layer2.randomize(0, 0, 75, 75, [ 0, 1, 2, 3, 4, 5, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ]);
+            layer2.setScale(0.75);
+
+            layer3 = map.createBlankDynamicLayer('layer3', tiles, 0, 0);
+            layer3.randomize(0, 0, 100, 100, [ 0, 1, 2, 3, 4, 5, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 ]);
+            layer3.setScale(0.5);
+
+            var planetmap = this.make.tilemap({ width: 1, height: 1, tileWidth: 128, tileHeight: 128 });
+            var planettiles = map.addTilesetImage('planet', null, 32, 32);
+            
+            layer4 = planetmap.createBlankDynamicLayer('layer4', planettiles, 50, -300);
+            layer4.fill(0);
+
+            var particles = this.add.particles('star');
+
+            var emitter = particles.createEmitter({
+                speed: 100,
+                scale: { start: 1, end: 0 },
+                blendMode: 'ADD',
+                gravityY: 1000,
+                accelerationY: 1000,
+                maxVelocityY: 200
+            });
+
+            player = this.physics.add.sprite(400, 500, 'player').setScale(2);
+            player.setActive(false);
+            player.setBounce(0);
+            player.setSize(16, 20);
+            player.setOffset(8);
+            player.disableBody(true, false);
+
+            emitter.startFollow(player);
+
+            doodadSprites = this.physics.add.group();
+            powerups = this.physics.add.group();
+
+            this.physics.add.overlap(player, powerups, pickItUp, null, this);
+
+            nameText = this.add.text(180, 200, '', { fontSize: '48px', fill: '#fff' });
+            welcomeText = this.add.text(200, 250, '', { fontSize: '32px', fill: '#fff' });
+            scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#fff' });
+            livesText = this.add.text(16, 48, 'Lives: ' + lives, { fontSize: '32px', fill: '#fff' });
+            powerText = this.add.text(16, 84, 'Power: ' + power, { fontSize: '32px', fill: '#fff' });
+            gameOverText = this.add.text(220, 250, '', { fontSize: '64px', fill: '#fff' });
+            youWinText = this.add.text(240, 250, '', { fontSize: '64px', fill: '#fff' });
+
+            showStartScreen();
+
+            this.time.addEvent({
+                delay: 2000,
+                loop: true,
+                callback: function () {
+                }
+            });
+
+            this.anims.create({
+                key: 'blink',
+                frames: this.anims.generateFrameNumbers('shot', { start: 0, end: 1 }),
+                frameRate: 5,
+                repeat: -1
+            });
+
+            this.anims.create({
+                key: 'explode',
+                frames: this.anims.generateFrameNumbers('explosion', { start: 0, end: 2 }),
+                frameRate: 5,
+                repeat: -1
+            });
+
+            enemySprites = this.physics.add.group();
+            this.physics.add.overlap(player, enemySprites, playerIsHit, null, this);
+            this.physics.add.collider(enemySprites);
+
+            playerShots = this.physics.add.group();
+            this.input.keyboard.on('keydown', function (event) {
+                if (event.code == "Space" && nameText.text.length > 0) {
+                    nameText.setText("");
+                    welcomeText.setText("");
+                    resetPlayer();
+                }
+                else if (event.code == "Space" && cooldown <= 0) {
+                    var shot = playerShots.create(player.x, player.y, 'shot');
+                    shot.setVelocity(0, -200);
+                    shot.anims.play('blink');
+                    cooldown = 100;
+                    shot.setSize(4, 4, true);
+                    shot.setScale(power / 25);
+                    shot.setData("DMG", power);
+                }
+            });
+
+            this.physics.add.overlap(playerShots, enemySprites, hitEnemy, null, this);
+        }
+
+        function hitEnemy(playerShotSprite, enemySprite) {
+            console.log("hitEnemy");
+            var dmg = playerShotSprite.getData("DMG");
+            hurtEnemy(enemySprite, dmg);
+            playerShots.remove(playerShotSprite);
+            playerShotSprite.destroy();
+        }
+
+        var explosion = null;
+        function playerIsHit(playerSprite, enemySprite) {
+            console.log("playerIsHit");
+            scoreText.setText('Score: ' + score);
+            playerSprite.disableBody(true, false);
+            explosion = this.physics.add.sprite(playerSprite.x, playerSprite.y, 'explosion').setScale(3);
+            explosion.anims.play('explode');
+            enemySprites.remove(enemySprite);
+            enemySprite.destroy();
+            killAll(this);
+            this.time.delayedCall(3000, () => {
+                decreaseLives(1);
+                resetStuff();
+                if (lives > 0) {
+                    resetPlayer();
+                }
+                else {
+                    gameOver(this);
+                }
+            }, [], this);
+        }
+
+        function gameOver(game) {
+            console.log("game over");
+            gameOverText.setText('GAME OVER');
+            game.time.addEvent({
+                delay: 5000,
+                loop: false,
+                callback: function () {
+                    showStartScreen();
+                    restart();
+                }
+            });
+        }
+
+        function resetStuff() {
+            console.log("reset stuff");
+            player.setPosition(400, 500);
+            if (explosion != null) {
+                explosion.destroy();
+            }
+            for (var i = 0; i < enemyQueue.length; i++) {
+                enemyQueue[i].currentHp = enemyQueue[i].spawnHp;
+            }
+            if (playerShots) {
+                playerShots.children.iterate(function (shot) {
+                    if (shot) {
+                        playerShots.remove(shot, true);
+                        shot.destroy();
+                    }
+                });
+            }
+            if (powerups) {
+                powerups.children.iterate(function (powerup) {
+                    if (powerup) {
+                        powerups.remove(powerup, true);
+                        powerup.destroy();
+                    }
+                });
+            }
+        }
+
+        function youWin(game) {
+            if (player.getData("win")) {
+                return;
+            }
+            console.log("you win");
+            player.setData("win", true);
+            player.setVelocity(0, -300);   
+            player.setCollideWorldBounds(false);
+            youWinText.setText("You win!");
+            killAll(game);
+            game.time.addEvent({
+                delay: 5000,
+                loop: false,
+                callback: function () {
+                    showStartScreen();
+                    restart();
+                }
+            });
+        }
+
+        function restart() {
+            console.log("restart");
+            runTime -= 1000;
+            lastTime = runTime;
+            currentEnemy = 0;
+            power = 25;
+            enemiesUntilPowerup = 5;
+        }
+
+        function resetPlayer() {
+            console.log("reset player");
+            player.setData("win", false);
+            player.enableBody(true, 400, 500, true, true);
+            player.setCollideWorldBounds(true);
+            power = 25;
+            enemiesUntilPowerup = 5;
+            setScore(0);
+        }
+
+        function addScore(moreScore) {
+            score += moreScore;
+            setScore(score);
+        }
+
+        function setScore(newScore) {
+            score = newScore;
+            scoreText.setText('Score: ' + score);
+        }
+
+        function hurtEnemy(enemySprite, dmg) {
+            var enemy = enemySprite.getData("enemy");
+            var modifier = enemy.currentHp / enemy.spawnHp;
+            enemy.currentHp -= dmg;
+            enemySprite.setTint(0xff00ff * modifier, 0xffff00 * modifier, 0x0000ff * modifier, 0xff0000 * modifier);
+        }
+
+        function pickItUp(player, powerup) {
+            addScore(1000);
+            powerups.remove(powerup);
+            powerup.destroy();
+            if (power < 125) {
+                power += 25;
+            }
+            powerText.setText("Power: " + power);
+        }
+
+        function update(time, delta) {
+            if (player.active) {
+                runTime += delta;
+            }
+            cooldown -= delta;
+
+            layer4.y += 0.1;
+
+            if (layer3.y >= 0) {
+                layer3.y -= 600;
+            }
+            layer3.y += 0.3;
+
+            if (layer2.y >= 0) {
+                layer2.y -= 600;
+            }
+            layer2.y += 0.7;
+
+            if (layer1.y >= 0) {
+                layer1.y -= 600;
+            }
+            layer1.y += 1;
+
+            if (player.getData("win") == false) {
+                if (cursors.left.isDown) {
+                    player.body.velocity.x = -200;
+                    player.setFrame(2);
+                }
+                else if (cursors.right.isDown) {
+                    player.body.velocity.x = 200;
+                    player.setFrame(1);
+                }
+                else {
+                    if (player.body.velocity.x > 10) {
+                        player.body.velocity.x -= 10;
+                    }
+                    else if (player.body.velocity.x < -10) {
+                        player.body.velocity.x += 10;
+                    }
+                    else {
+                        player.body.velocity.x = 0;
+                    }
+                    player.setFrame(0);
+                }
+                
+                if (cursors.down.isDown) {
+                    player.body.velocity.y = 250;
+                }
+                else if (cursors.up.isDown) {
+                    player.body.velocity.y = -100;
+                }
+                else {
+                    if (player.body.velocity.y > 10) {
+                        player.body.velocity.y -= 10;
+                    }
+                    else if (player.body.velocity.y < -10) {
+                        player.body.velocity.y += 10;
+                    }
+                    else {
+                        player.body.velocity.y = 0;
+                    }
+                }
+            }
+
+            if (runTime > 220000) {
+                youWin(this);
+            }
+
+            updatePowerups(lastTime, runTime);
+            updateEnemies(this, lastTime, runTime);
+            updatePlayerShots(lastTime, runTime);
+            updateDoodads(delta);
+
+            lastTime = runTime;
+        }
+    </script>
+</body>
+</html>
